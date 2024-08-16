@@ -1,4 +1,4 @@
-package com.demodecompileapk.service;
+package com.easyflow.demodecompileapk.service;
 
 import brut.androlib.ApkBuilder;
 import brut.androlib.ApkDecoder;
@@ -9,14 +9,13 @@ import brut.directory.DirectoryException;
 import brut.directory.ExtFile;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.stream.Stream;
 
 
@@ -83,6 +82,52 @@ public class ApkService {
 
         return errorMessage;
 
+    }
+
+    public void changeValor(String directoryPath, String nameFile) throws IOException {
+        List<File> files = searchFiles(directoryPath,nameFile);
+        if(!files.isEmpty()) {
+            //Se encontraron arvhivos
+            for (File file : files) {
+                if(isFileReadable(file)){
+
+                }
+            }
+        }else{
+            //No se encontraron arhivos
+
+        }
+    }
+
+    public boolean isFileReadable(File file) {
+        try(BufferedReader reader = new BufferedReader(new FileReader(file))){
+            while (reader.readLine() != null) {
+                for (char c : reader.readLine().toCharArray()) {
+                    if(Character.isISOControl(c) && !Character.isWhitespace(c)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+        } catch (IOException e){
+            return false;
+        }
+        return false;
+    }
+
+    public List<File> searchFiles(String directoryPath,String nameFile) throws IOException {
+        List<File> files = new ArrayList<>();
+        Path dirPath = Paths.get(directoryPath);
+        try(Stream<Path> paths = Files.walk(dirPath)) {
+            paths.filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().equals(nameFile))
+                    .forEach(p -> {
+                        files.add(p.toFile());
+                    });
+        }catch ( IOException e){
+            System.out.println("Error walking the directory "+e.getMessage());
+        }
+        return files;
     }
 
     public String modifyFilesInDirectory(String directoryPath, String fileName, String oldValue, String newValue) throws IOException {

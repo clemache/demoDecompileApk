@@ -1,6 +1,6 @@
-package com.demodecompileapk.controller;
+package com.easyflow.demodecompileapk.controller;
 
-import com.demodecompileapk.service.ApkService;
+import com.easyflow.demodecompileapk.service.ApkService;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.*;
@@ -10,7 +10,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Paths;
 
 @RestController
@@ -22,6 +21,7 @@ public class ApkToolController {
     public ApkToolController(ApkService apkService) {
         this.apkService = apkService;
     }
+
     @PostMapping("/modify")
     public ResponseEntity<Resource> modifyApk(@RequestParam("file") MultipartFile apkFile) {
 
@@ -89,5 +89,14 @@ public class ApkToolController {
             }
         }
     }
-
+/*
+    @PostMapping("/searchFile")
+    public ResponseEntity<String> searchApk(@RequestParam("patchFile") String patchFile) {
+        try {
+            apkService.addLineInFile(patchFile,"AndroidManifest.xml");
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return ResponseEntity.ok("Test");
+    } */
 }

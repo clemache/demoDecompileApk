@@ -1,4 +1,4 @@
-package com.demodecompileapk;
+package com.easyflow.demodecompileapk;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
