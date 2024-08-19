@@ -7,6 +7,12 @@ import brut.androlib.exceptions.AndrolibException;
 import brut.common.BrutException;
 import brut.directory.DirectoryException;
 import brut.directory.ExtFile;
+import com.easyflow.demodecompileapk.configuration.Log;
+import com.easyflow.demodecompileapk.configuration.mq.Message;
+import com.easyflow.demodecompileapk.configuration.mq.Publisher;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
@@ -15,12 +21,19 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 
 
 @Service
 public class ApkService {
+
+    @Autowired
+    private Publisher _notifications;
+    @Autowired
+    private Log log;
+    private Config config = Config.getDefaultConfig();
 
     private static final String RESULTS_DIR = Paths.get("results").toAbsolutePath().toString();
     private static final String TOOLS_DIR = Paths.get("tools").toAbsolutePath().toString();
@@ -30,8 +43,6 @@ public class ApkService {
     private static final File OUTPUT_DIR_SIGNED = new File(System.getProperty("user.dir"),"apkResult");
     private static final String KEY_STORE_FILE_PATH = Paths.get(TOOLS_DIR, "keyStore","AsistecomApp.jks").toString();
     private static final String KEY_STORE = "asistecom2024";
-
-    private Config config = Config.getDefaultConfig();
 
     public String decompileApk(String apkPath) throws AndrolibException{
 
@@ -54,65 +65,59 @@ public class ApkService {
 
     }
 
-    public String modifyFile(String filePath, String oldValue, String newValue) throws IOException {
-        File file = new File(filePath);
-        String errorMessage = "0";
-
-        if (!file.exists() || !file.isFile()) {
-            errorMessage = "Invalid file.";
-        }
-
-        // Verifica si el archivo es .smali o .xml
-        if (!(file.getName().endsWith(".smali") || file.getName().endsWith(".xml"))) {
-            errorMessage = "The file is not a .smali or .xml file.";
-        }
-
-        // lee el contenido del archivo
-        String content = new String(Files.readAllBytes(file.toPath()));
-
-        // Verifica si el valor viejo está presente
-        if (!content.contains(oldValue)) {
-            errorMessage = "Old value not found in file.";
-        }
-
-        // Remplaza el valor antiguo por el nuevo
-        content = content.replace(oldValue, newValue);
-        // vuelve a escribir en el archivo con el contenido modificado
-        Files.write(file.toPath(), content.getBytes(), StandardOpenOption.TRUNCATE_EXISTING);
-
-        return errorMessage;
-
-    }
-
-    public void changeValor(String directoryPath, String nameFile) throws IOException {
-        List<File> files = searchFiles(directoryPath,nameFile);
+    //Main Method Moodify
+    public String modifyOnFileValue(String directoryPathDecompilation, String nameFile, String oldValue, String newValue, String username, String device) throws IOException {
+        List<File> files = searchFiles(directoryPathDecompilation,nameFile);
+        String response = "";
         if(!files.isEmpty()) {
-            //Se encontraron arvhivos
             for (File file : files) {
                 if(isFileReadable(file)){
-
+                    updateValueInFile(file,oldValue,newValue,username,device);
+                }else {
+                    response = "Los archivos no se pueden editar.";
                 }
             }
         }else{
-            //No se encontraron arhivos
-
+            response = "No se encontrarn archivos con el nombre "+nameFile;
         }
+        return response;
     }
 
-    public boolean isFileReadable(File file) {
-        try(BufferedReader reader = new BufferedReader(new FileReader(file))){
-            while (reader.readLine() != null) {
-                for (char c : reader.readLine().toCharArray()) {
-                    if(Character.isISOControl(c) && !Character.isWhitespace(c)) {
-                        return false;
-                    }
-                }
-                return true;
-            }
-        } catch (IOException e){
-            return false;
+    public void updateValueInFile(File file, String oldValue, String newValue, String username, String device) throws IOException {
+        String className = this.getClass().getName();
+        String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
+
+        if (!file.exists() || !file.isFile()) {
+            throw new IllegalArgumentException("Invalid file.");
         }
-        return false;
+
+        List<String> allowedExtensions = Arrays.asList(".smali", ".xml");
+        boolean isValidExtension = allowedExtensions.stream()
+                .anyMatch(extension -> file.getName().endsWith(extension));
+
+        if (!isValidExtension) {
+            throw new IllegalArgumentException("The file is not a .smali or .xml file.");
+        }
+
+        String content = new String(Files.readAllBytes(file.toPath()));
+        if (!content.contains(oldValue)) {
+            log.registerLog("0",className,nameofCurrMethod,"Old value not found in file.");
+            Message message = new Message();
+            message.setId(0);
+            message.setTopic("Error");
+            message.setMessageContent("Old value not found in file.");
+            message.setObject(null);
+            message.setProcess("Update File");
+            _notifications.sendMessageError(message);
+            //throw new IllegalArgumentException("Old value not found in file.");
+        }
+
+        String updatedContent = content.replace(oldValue, newValue);
+        if (!content.equals(updatedContent)) {
+            Files.write(file.toPath(), updatedContent.getBytes(), StandardOpenOption.TRUNCATE_EXISTING);
+
+
+        }
     }
 
     public List<File> searchFiles(String directoryPath,String nameFile) throws IOException {
@@ -125,35 +130,9 @@ public class ApkService {
                         files.add(p.toFile());
                     });
         }catch ( IOException e){
-            System.out.println("Error walking the directory "+e.getMessage());
+            throw new IllegalArgumentException("Error walking the directory "+e.getMessage());
         }
         return files;
-    }
-
-    public String modifyFilesInDirectory(String directoryPath, String fileName, String oldValue, String newValue) throws IOException {
-        Path dirPath = Paths.get(directoryPath);
-        StringBuilder errorMessages = new StringBuilder();
-        try (Stream<Path> paths = Files.walk(dirPath)) {
-            paths.filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().equals(fileName))
-                    .forEach(p -> {
-                        try {
-                            String result = modifyFile(p.toString(), oldValue, newValue);
-                            if (!result.equals("0")) {
-                                errorMessages.append("Error in file ").append(p).append(": ").append(result).append("\n");
-                            }
-                        } catch (IOException e) {
-                            errorMessages.append("Error modifying file ").append(p).append(": ").append(e.getMessage()).append("\n");
-                        }
-                    });
-        }catch (IOException e) {
-            errorMessages.append("Error walking the directory: ").append(e.getMessage()).append("\n");
-        }
-        if (errorMessages.length() > 0) {
-            return "Modification completed with errors:\n" + errorMessages.toString();
-        } else {
-            return "Modification complete.";
-        }
     }
 
     public String compileApk(String pathDecompilation) throws AndrolibException {
@@ -276,4 +255,19 @@ public class ApkService {
         directory.delete();
     }
 
+    public boolean isFileReadable(File file) {
+        try(BufferedReader reader = new BufferedReader(new FileReader(file))){
+            while (reader.readLine() != null) {
+                for (char c : reader.readLine().toCharArray()) {
+                    if(Character.isISOControl(c) && !Character.isWhitespace(c)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+        } catch (IOException e){
+            return false;
+        }
+        return false;
+    }
 }

@@ -1,6 +1,8 @@
 package com.easyflow.demodecompileapk.controller;
 
+import com.easyflow.demodecompileapk.configuration.mq.Publisher;
 import com.easyflow.demodecompileapk.service.ApkService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.*;
@@ -10,13 +12,14 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.nio.file.Paths;
 
 @RestController
 @RequestMapping("/apk")
 public class ApkToolController {
 
     private final ApkService apkService;
+    @Autowired
+    private Publisher _notifications;
 
     public ApkToolController(ApkService apkService) {
         this.apkService = apkService;
@@ -26,7 +29,7 @@ public class ApkToolController {
     public ResponseEntity<Resource> modifyApk(@RequestParam("file") MultipartFile apkFile) {
 
         //En postamn recibe la opcion de "ENVIAR Y DESCARGAR"
-        String PATH_DECOMPILATION = Paths.get("results").toString();
+        //String PATH_DECOMPILATION = Paths.get("results").toString();
         String pathDecompile;
         String pathRecompile;
         String pathZipalign;
@@ -52,14 +55,16 @@ public class ApkToolController {
                 String fileName = "Parametros.smali";
                 String oldValue = "192.168.1.1";
                 String newValue = "192.168.1.2";
-                apkService.modifyFilesInDirectory(PATH_DECOMPILATION, fileName, oldValue, newValue);
+                 String result = apkService.modifyOnFileValue(pathDecompile,fileName,oldValue,newValue,"user001","device");
+
             } catch (IOException e) {
                 e.printStackTrace();
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
             }
 
-            //COMPILAR LA APK DE NUEVO CON LOS CAMBIOS
+            //COMPILA LA APK DE NUEVO CON LOS CAMBIOS
             pathRecompile = apkService.compileApk(pathDecompile);
+            _notifications.sendProcessInfo("Decompilando apk - "+tempFile.getName() ,"user001");
 
             //ZIPALIGN optimiza archivos APK para mejorar el rendimiento
              pathZipalign = apkService.zipalignApk(pathRecompile);
@@ -76,9 +81,10 @@ public class ApkToolController {
                     .filename(signedApkFile.getName())
                     .build());
             headers.setContentLength(signedApkFile.length());
-
+            _notifications.sendProcessInfo("APK generado de "+ tempFile.getName(),"user001");
             // Retornar el archivo firmado como respuesta
             return new ResponseEntity<>(resource, headers, HttpStatus.OK);
+
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -89,14 +95,10 @@ public class ApkToolController {
             }
         }
     }
-/*
+
     @PostMapping("/searchFile")
-    public ResponseEntity<String> searchApk(@RequestParam("patchFile") String patchFile) {
-        try {
-            apkService.addLineInFile(patchFile,"AndroidManifest.xml");
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        return ResponseEntity.ok("Test");
-    } */
+    public ResponseEntity<String> searchApk(@RequestParam("file") String test) {
+
+        return ResponseEntity.ok("Test"+ test);
+    }
 }
