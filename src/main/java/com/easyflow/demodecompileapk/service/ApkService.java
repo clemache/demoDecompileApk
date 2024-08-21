@@ -10,8 +10,7 @@ import brut.directory.ExtFile;
 import com.easyflow.demodecompileapk.configuration.Log;
 import com.easyflow.demodecompileapk.configuration.mq.Message;
 import com.easyflow.demodecompileapk.configuration.mq.Publisher;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -29,20 +28,28 @@ import java.util.stream.Stream;
 @Service
 public class ApkService {
 
-    @Autowired
-    private Publisher _notifications;
+   // @Autowired
+   // private Publisher _notifications;
     @Autowired
     private Log log;
     private Config config = Config.getDefaultConfig();
+    private static final String OS = System.getProperty("os.name").toLowerCase();
 
     private static final String RESULTS_DIR = Paths.get("results").toAbsolutePath().toString();
-    private static final String TOOLS_DIR = Paths.get("tools").toAbsolutePath().toString();
     private static final String OUTPUT_PATCH_DECOMPILATION =  Paths.get(RESULTS_DIR,"decompilation").toString();
     private static final String OUTPUT_DIR_NEW_APK = Paths.get(RESULTS_DIR,"recompiledApk").toString();
     private static final String OUTPUT_DIR_ZIPALIGN = Paths.get(RESULTS_DIR,"zipalign").toString();
     private static final File OUTPUT_DIR_SIGNED = new File(System.getProperty("user.dir"),"apkResult");
-    private static final String KEY_STORE_FILE_PATH = Paths.get(TOOLS_DIR, "keyStore","AsistecomApp.jks").toString();
     private static final String KEY_STORE = "asistecom2024";
+
+    //Windows
+    private static final String TOOLS_DIR = Paths.get("tools").toAbsolutePath().toString();
+    private static final String KEY_STORE_FILE_PATH = Paths.get(TOOLS_DIR, "keyStore","AsistecomApp.jks").toString();
+
+    //Linux tools
+    private static final String TOOLS_DIR_LNX = "/app/tools";
+    private static final String KEY_STORE_FILE_PATH_LNX = Paths.get(TOOLS_DIR_LNX, "keyStore","AsistecomApp.jks").toString();
+
 
     public String decompileApk(String apkPath) throws AndrolibException{
 
@@ -83,58 +90,6 @@ public class ApkService {
         return response;
     }
 
-    public void updateValueInFile(File file, String oldValue, String newValue, String username, String device) throws IOException {
-        String className = this.getClass().getName();
-        String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
-
-        if (!file.exists() || !file.isFile()) {
-            throw new IllegalArgumentException("Invalid file.");
-        }
-
-        List<String> allowedExtensions = Arrays.asList(".smali", ".xml");
-        boolean isValidExtension = allowedExtensions.stream()
-                .anyMatch(extension -> file.getName().endsWith(extension));
-
-        if (!isValidExtension) {
-            throw new IllegalArgumentException("The file is not a .smali or .xml file.");
-        }
-
-        String content = new String(Files.readAllBytes(file.toPath()));
-        if (!content.contains(oldValue)) {
-            log.registerLog("0",className,nameofCurrMethod,"Old value not found in file.");
-            Message message = new Message();
-            message.setId(0);
-            message.setTopic("Error");
-            message.setMessageContent("Old value not found in file.");
-            message.setObject(null);
-            message.setProcess("Update File");
-            _notifications.sendMessageError(message);
-            //throw new IllegalArgumentException("Old value not found in file.");
-        }
-
-        String updatedContent = content.replace(oldValue, newValue);
-        if (!content.equals(updatedContent)) {
-            Files.write(file.toPath(), updatedContent.getBytes(), StandardOpenOption.TRUNCATE_EXISTING);
-
-
-        }
-    }
-
-    public List<File> searchFiles(String directoryPath,String nameFile) throws IOException {
-        List<File> files = new ArrayList<>();
-        Path dirPath = Paths.get(directoryPath);
-        try(Stream<Path> paths = Files.walk(dirPath)) {
-            paths.filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().equals(nameFile))
-                    .forEach(p -> {
-                        files.add(p.toFile());
-                    });
-        }catch ( IOException e){
-            throw new IllegalArgumentException("Error walking the directory "+e.getMessage());
-        }
-        return files;
-    }
-
     public String compileApk(String pathDecompilation) throws AndrolibException {
         File apkFileDecompiled = new File(pathDecompilation);
         File outPutPathNewApk = new File(OUTPUT_DIR_NEW_APK,"ASISTEAPP_RC.apk");
@@ -171,8 +126,14 @@ public class ApkService {
         File outPutPathApkZipalign = new File(outPutDirZipalign.getPath(),"ASISTEAPP_ZI.apk");
 
         try {
-            String ZipalignCommand = String.format("%s\\zipalign.exe -v 4 \"%s\" \"%s\"", TOOLS_DIR, apkPathZipalign, outPutPathApkZipalign);
-            Process zipalignProcess = Runtime.getRuntime().exec(ZipalignCommand);
+            String zipalignComand;
+            if(OS.contains("win")){
+                 zipalignComand = String.format("%s\\zipalign.exe -v 4 \"%s\" \"%s\"", TOOLS_DIR, apkPathZipalign, outPutPathApkZipalign.getAbsolutePath());
+            }else{
+                 zipalignComand = String.format("%s/zipalign -v 4 %s %s", TOOLS_DIR_LNX, apkPathZipalign, outPutPathApkZipalign.getAbsolutePath());
+            }
+
+            Process zipalignProcess = Runtime.getRuntime().exec(zipalignComand);
             // Lee las salidas estándar y de error del proceso
             BufferedReader stdInput = new BufferedReader(new InputStreamReader(zipalignProcess.getInputStream()));
             BufferedReader stdError = new BufferedReader(new InputStreamReader(zipalignProcess.getErrorStream()));
@@ -192,7 +153,6 @@ public class ApkService {
 
             if (zipalignExitCode == 0) {
                 return outPutPathApkZipalign.getAbsolutePath();
-                //return "APK zip-aligned successfully!\n";
             } else {
                 return "Failed to zip-align the APK. Exit code: " + zipalignExitCode + "\n" + errorOutput.toString();
             }
@@ -207,13 +167,19 @@ public class ApkService {
         if(!OUTPUT_DIR_SIGNED.exists()) {
             if(!OUTPUT_DIR_SIGNED.mkdirs()) throw new IOException("Failed to create output directory.");
         }
-        //if (!OUTPUT_DIR_SIGNED.mkdirs()) throw  new IOException("Failed to create output directory.");
         File outPutPathApkSigned = new File(OUTPUT_DIR_SIGNED.getPath(),"ASISTEAPP_SG.apk");
 
         try{
-            String apksignerCommand = String.format("%s\\apksigner.bat sign --ks \"%s\" --ks-pass pass:%s --v1-signing-enabled true --v2-signing-enabled true --out \"%s\" \"%s\"",
-                    TOOLS_DIR, KEY_STORE_FILE_PATH, KEY_STORE,outPutPathApkSigned ,zipalignedApkPath);
-            Process apkSignerProcess = Runtime.getRuntime().exec(apksignerCommand);
+            String apkSignerCommand;
+            if(OS.contains("win")){
+                apkSignerCommand = String.format("%s\\apksigner.bat sign --ks \"%s\" --ks-pass pass:%s --v1-signing-enabled true --v2-signing-enabled true --out \"%s\" \"%s\"",
+                        TOOLS_DIR, KEY_STORE_FILE_PATH, KEY_STORE,outPutPathApkSigned ,zipalignedApkPath);
+            }else{
+                apkSignerCommand = String.format("%s/apksigner sign --ks %s --ks-pass pass:%s --v1-signing-enabled true --v2-signing-enabled true --out %s %s",
+                        TOOLS_DIR_LNX, KEY_STORE_FILE_PATH_LNX, KEY_STORE, outPutPathApkSigned, zipalignedApkPath);
+            }
+
+            Process apkSignerProcess = Runtime.getRuntime().exec(apkSignerCommand);
 
             //lectura de las salidas estandar y errores
             BufferedReader stdInput = new BufferedReader(new InputStreamReader(apkSignerProcess.getInputStream()));
@@ -255,6 +221,58 @@ public class ApkService {
         directory.delete();
     }
 
+    public void updateValueInFile(File file, String oldValue, String newValue, String username, String device) throws IOException {
+        String className = this.getClass().getName();
+        String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
+
+        if (!file.exists() || !file.isFile()) {
+            throw new IllegalArgumentException("Invalid file.");
+        }
+
+        List<String> allowedExtensions = Arrays.asList(".smali", ".xml");
+        boolean isValidExtension = allowedExtensions.stream()
+                .anyMatch(extension -> file.getName().endsWith(extension));
+
+        if (!isValidExtension) {
+            throw new IllegalArgumentException("The file is not a .smali or .xml file.");
+        }
+
+        String content = new String(Files.readAllBytes(file.toPath()));
+        if (!content.contains(oldValue)) {
+            log.registerLog("0",className,nameofCurrMethod,"Old value not found in file.");
+            Message message = new Message();
+            message.setId(0);
+            message.setTopic("Error");
+            message.setMessageContent("Old value not found in file.");
+            message.setObject(null);
+            message.setProcess("Update File");
+            // _notifications.sendMessageError(message);
+            throw new IllegalArgumentException("Old value not found in file.");
+        }
+
+        String updatedContent = content.replace(oldValue, newValue);
+        if (!content.equals(updatedContent)) {
+            Files.write(file.toPath(), updatedContent.getBytes(), StandardOpenOption.TRUNCATE_EXISTING);
+
+
+        }
+    }
+
+    public List<File> searchFiles(String directoryPath,String nameFile) throws IOException {
+        List<File> files = new ArrayList<>();
+        Path dirPath = Paths.get(directoryPath);
+        try(Stream<Path> paths = Files.walk(dirPath)) {
+            paths.filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().equals(nameFile))
+                    .forEach(p -> {
+                        files.add(p.toFile());
+                    });
+        }catch ( IOException e){
+            throw new IllegalArgumentException("Error walking the directory "+e.getMessage());
+        }
+        return files;
+    }
+
     public boolean isFileReadable(File file) {
         try(BufferedReader reader = new BufferedReader(new FileReader(file))){
             while (reader.readLine() != null) {
@@ -270,4 +288,5 @@ public class ApkService {
         }
         return false;
     }
+
 }
