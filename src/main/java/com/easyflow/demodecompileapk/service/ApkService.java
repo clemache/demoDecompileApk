@@ -4,13 +4,11 @@ import brut.androlib.ApkBuilder;
 import brut.androlib.ApkDecoder;
 import brut.androlib.Config;
 import brut.androlib.exceptions.AndrolibException;
-import brut.common.BrutException;
 import brut.directory.DirectoryException;
 import brut.directory.ExtFile;
-import com.easyflow.demodecompileapk.configuration.Log;
-import com.easyflow.demodecompileapk.configuration.mq.Message;
-import com.easyflow.demodecompileapk.configuration.mq.Publisher;
 
+import com.easyflow.demodecompileapk.configuration.Log;
+import com.easyflow.demodecompileapk.configuration.Result;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -24,7 +22,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 
-
 @Service
 public class ApkService {
 
@@ -32,7 +29,8 @@ public class ApkService {
    // private Publisher _notifications;
     @Autowired
     private Log log;
-    private Config config = Config.getDefaultConfig();
+
+    private  final Config config = Config.getDefaultConfig();
     private static final String OS = System.getProperty("os.name").toLowerCase();
 
     private static final String RESULTS_DIR = Paths.get("results").toAbsolutePath().toString();
@@ -51,7 +49,11 @@ public class ApkService {
     private static final String KEY_STORE_FILE_PATH_LNX = Paths.get(TOOLS_DIR_LNX, "keyStore","AsistecomApp.jks").toString();
 
 
-    public String decompileApk(String apkPath) throws AndrolibException{
+    public Result decompileApk(String apkPath) throws AndrolibException{
+
+        String className = this.getClass().getName();
+        String nameofCurrMethod = new Throwable() .getStackTrace()[0].getMethodName();
+        Result response = new Result();
 
         File apkFile = new File(apkPath);
         File outPutPath = new File(OUTPUT_PATCH_DECOMPILATION);
@@ -64,68 +66,105 @@ public class ApkService {
 
         try {
             apkDecoder.decode(outPutPath);
-           // return "Decompile app successfully.";
-            return outPutPath.getAbsolutePath();
+            response.setStatus(Result.Status.SUCCESSFUL);
+            response.setHttp(Result.Http.OK);
+            response.setId(0);
+            response.setCodError(0);
+            response.setMessage("Decompiled APK at: " + outPutPath.getAbsolutePath());
+            response.setObject(outPutPath.getAbsolutePath());
+            log.registerLog("0", className, nameofCurrMethod, response.getMessage());
         }catch (AndrolibException | IOException | DirectoryException  e) {
-            return  "Error to decompile APK: " + e.getMessage();
-        }
-
-    }
-
-    //Main Method Moodify
-    public String modifyOnFileValue(String directoryPathDecompilation, String nameFile, String oldValue, String newValue, String username, String device) throws IOException {
-        List<File> files = searchFiles(directoryPathDecompilation,nameFile);
-        String response = "";
-        if(!files.isEmpty()) {
-            for (File file : files) {
-                if(isFileReadable(file)){
-                    updateValueInFile(file,oldValue,newValue,username,device);
-                }else {
-                    response = "Los archivos no se pueden editar.";
-                }
-            }
-        }else{
-            response = "No se encontrarn archivos con el nombre "+nameFile;
+            response.setMessage("Error to decompile APK: "+e.getMessage());
+            log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
         }
         return response;
     }
 
-    public String compileApk(String pathDecompilation) throws AndrolibException {
+    //Main Method Moodify
+    public Result modifyValueFile(String directoryPathDecompilation, String nameFile, String oldValue, String newValue, String username, String device) throws IOException {
+
+        String className = this.getClass().getName();
+        String nameofCurrMethod = new Throwable() .getStackTrace()[0].getMethodName();
+        Result response = new Result();
+
+        List<File> files = searchFiles(directoryPathDecompilation,nameFile);
+
+        if(!files.isEmpty()) {
+            for (File file : files) {
+                if(isFileReadable(file)){
+                response = updateValue(file,oldValue,newValue,username,device);
+                }else {
+                    response.setStatus(Result.Status.FAIL);
+                    response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+                    response.setId(99);
+                    response.setCodError(99);
+                    response.setMessage("The file cannot be edited, it does not contain valid characters.");
+                    log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+                }
+            }
+        }else{
+            response.setStatus(Result.Status.FAIL);
+            response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+            response.setId(99);
+            response.setCodError(99);
+            response.setMessage("No files found with the name "+nameFile);
+            log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+        }
+        return response;
+    }
+
+    public Result compileApk(String pathDecompilation) throws AndrolibException {
+
+        String className = this.getClass().getName();
+        String nameofCurrMethod = new Throwable() .getStackTrace()[0].getMethodName();
+        Result response = new Result();
+
         File apkFileDecompiled = new File(pathDecompilation);
         File outPutPathNewApk = new File(OUTPUT_DIR_NEW_APK,"ASISTEAPP_RC.apk");
 
         if (!outPutPathNewApk.exists()) {
             if (!outPutPathNewApk.mkdirs()) {
-                return "Failed to create output directory.";
+                throw new AndrolibException("Failed to create output directory.");
             }
         }
-        //Verifica si existe la ruta de los archivos decompilados de la apk
         ExtFile extFile = new ExtFile(apkFileDecompiled);
         if (!apkFileDecompiled.exists() || !apkFileDecompiled.isDirectory()) {
-            return "Source directory does not exist or is not a directory.";
+            throw new AndrolibException("Source directory does not exist or is not a directory.");
         }
 
         try {
             ApkBuilder apkBuilder = new ApkBuilder(config,extFile);
-            // Recompilar APK
             apkBuilder.build(outPutPathNewApk);
-            return outPutPathNewApk.getAbsolutePath();
-            //return "Recompile successfull new apk";
-
-        } catch (AndrolibException e) {
-            return "Error during APK compilation: " + e.getMessage();
-        } catch (BrutException e) {
-            throw new RuntimeException(e);
+            response.setStatus(Result.Status.SUCCESSFUL);
+            response.setHttp(Result.Http.OK);
+            response.setId(0);
+            response.setCodError(0);
+            response.setMessage("Compiled APK at: " + outPutPathNewApk.getAbsolutePath());
+            response.setObject(outPutPathNewApk.getAbsolutePath());
+            log.registerLog("0", className, nameofCurrMethod, response.getMessage());
+        } catch (Exception e) {
+            response.setStatus(Result.Status.FAIL);
+            response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+            response.setId(99);
+            response.setCodError(99);
+            response.setMessage("Error during APK compilation: " + e.getMessage());
+            log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
         }
+        return response;
     }
 
-    public String zipalignApk(String apkPathZipalign) throws InterruptedException, IOException {
+    public Result zipalignApk(String apkPathZipalign) throws InterruptedException, IOException {
+
+        String className = this.getClass().getName();
+        String nameofCurrMethod = new Throwable() .getStackTrace()[0].getMethodName();
+        Result response = new Result();
 
         File outPutDirZipalign = new File(OUTPUT_DIR_ZIPALIGN);
-        if (!outPutDirZipalign.mkdirs()) return "Failed to create output directory.";
+        if (!outPutDirZipalign.mkdirs()) throw new IOException("Failed to create output directory.");
         File outPutPathApkZipalign = new File(outPutDirZipalign.getPath(),"ASISTEAPP_ZI.apk");
 
         try {
+
             String zipalignComand;
             if(OS.contains("win")){
                  zipalignComand = String.format("%s\\zipalign.exe -v 4 \"%s\" \"%s\"", TOOLS_DIR, apkPathZipalign, outPutPathApkZipalign.getAbsolutePath());
@@ -150,38 +189,55 @@ public class ApkService {
             }
 
             int zipalignExitCode = zipalignProcess.waitFor();
-
             if (zipalignExitCode == 0) {
-                return outPutPathApkZipalign.getAbsolutePath();
+                response.setStatus(Result.Status.SUCCESSFUL);
+                response.setCodError(0);
+                response.setId(0);
+                response.setMessage("Apk aligned at: " + outPutPathApkZipalign.getAbsolutePath());
+                response.setObject(outPutPathApkZipalign.getAbsolutePath());
+                log.registerLog("0", className, nameofCurrMethod,response.getMessage());
             } else {
-                return "Failed to zip-align the APK. Exit code: " + zipalignExitCode + "\n" + errorOutput.toString();
+                response.setStatus(Result.Status.FAIL);
+                response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+                response.setId(99);
+                response.setCodError(99);
+                response.setMessage("Failed to zip-align the APK. Exit code: " + zipalignExitCode + "\n" + errorOutput);
+                log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
             }
         } catch (IOException | InterruptedException e) {
-            e.printStackTrace();
-            return e.getMessage();
+            response.setStatus(Result.Status.FAIL);
+            response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+            response.setId(99);
+            response.setCodError(99);
+            response.setMessage("Failed to zip-align the APK: " + e.getMessage());
+            log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
         }
+        return response;
     }
 
-    public File signApk(String zipalignedApkPath) throws IOException, InterruptedException {
+    public Result signApk(String zipalignedApkPath) throws IOException, InterruptedException {
+
+        String className = this.getClass().getName();
+        String nameofCurrMethod = new Throwable() .getStackTrace()[0].getMethodName();
+        Result response = new Result();
 
         if(!OUTPUT_DIR_SIGNED.exists()) {
             if(!OUTPUT_DIR_SIGNED.mkdirs()) throw new IOException("Failed to create output directory.");
         }
-        File outPutPathApkSigned = new File(OUTPUT_DIR_SIGNED.getPath(),"ASISTEAPP_SG.apk");
+        File outFileApkSigned = new File(OUTPUT_DIR_SIGNED.getPath(),"ASISTEAPP_SG.apk");
 
         try{
             String apkSignerCommand;
             if(OS.contains("win")){
                 apkSignerCommand = String.format("%s\\apksigner.bat sign --ks \"%s\" --ks-pass pass:%s --v1-signing-enabled true --v2-signing-enabled true --out \"%s\" \"%s\"",
-                        TOOLS_DIR, KEY_STORE_FILE_PATH, KEY_STORE,outPutPathApkSigned ,zipalignedApkPath);
+                        TOOLS_DIR, KEY_STORE_FILE_PATH, KEY_STORE,outFileApkSigned ,zipalignedApkPath);
             }else{
                 apkSignerCommand = String.format("%s/apksigner sign --ks %s --ks-pass pass:%s --v1-signing-enabled true --v2-signing-enabled true --out %s %s",
-                        TOOLS_DIR_LNX, KEY_STORE_FILE_PATH_LNX, KEY_STORE, outPutPathApkSigned, zipalignedApkPath);
+                        TOOLS_DIR_LNX, KEY_STORE_FILE_PATH_LNX, KEY_STORE, outFileApkSigned, zipalignedApkPath);
             }
 
             Process apkSignerProcess = Runtime.getRuntime().exec(apkSignerCommand);
 
-            //lectura de las salidas estandar y errores
             BufferedReader stdInput = new BufferedReader(new InputStreamReader(apkSignerProcess.getInputStream()));
             BufferedReader stdError = new BufferedReader(new InputStreamReader(apkSignerProcess.getErrorStream()));
 
@@ -198,17 +254,33 @@ public class ApkService {
 
             int signExitCode = apkSignerProcess.waitFor();
             if (signExitCode == 0) {
-                 return outPutPathApkSigned;
-                //return "APK signature successfully!\n";
+                response.setStatus(Result.Status.SUCCESSFUL);
+                response.setHttp(Result.Http.OK);
+                response.setId(0);
+                response.setCodError(0);
+                response.setMessage("Apk signed successfully, at : "+ outFileApkSigned.getAbsolutePath());
+                response.setObject(outFileApkSigned);
+                log.registerLog("0", className, nameofCurrMethod, response.getMessage());
             }else {
-                throw new IOException("Failed to sign the APK. Exit code: " + signExitCode + "\n" + errorOutput.toString());
+                response.setStatus(Result.Status.FAIL);
+                response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+                response.setId(99);
+                response.setCodError(99);
+                response.setMessage("Failed to sign the APK. Exit code: " + signExitCode + "\n" + errorOutput);
+                log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
             }
         }catch (IOException | InterruptedException e) {
-            e.printStackTrace();
-            throw e;
+            response.setStatus(Result.Status.FAIL);
+            response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+            response.setId(99);
+            response.setCodError(99);
+            response.setMessage("Failed to sign the APK: " + e.getMessage());
+            log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
         }
+        return response;
     }
 
+    //Functiosn extras
     public void deleteDirectory(File directory) {
         if (directory.isDirectory()) {
             File[] files = directory.listFiles();
@@ -221,9 +293,10 @@ public class ApkService {
         directory.delete();
     }
 
-    public void updateValueInFile(File file, String oldValue, String newValue, String username, String device) throws IOException {
+    public Result updateValue(File file, String oldValue, String newValue, String username, String device) throws IOException {
         String className = this.getClass().getName();
         String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
+        Result response = new Result();
 
         if (!file.exists() || !file.isFile()) {
             throw new IllegalArgumentException("Invalid file.");
@@ -238,24 +311,23 @@ public class ApkService {
         }
 
         String content = new String(Files.readAllBytes(file.toPath()));
-        if (!content.contains(oldValue)) {
-            log.registerLog("0",className,nameofCurrMethod,"Old value not found in file.");
-            Message message = new Message();
-            message.setId(0);
-            message.setTopic("Error");
-            message.setMessageContent("Old value not found in file.");
-            message.setObject(null);
-            message.setProcess("Update File");
-            // _notifications.sendMessageError(message);
-            throw new IllegalArgumentException("Old value not found in file.");
-        }
-
-        String updatedContent = content.replace(oldValue, newValue);
-        if (!content.equals(updatedContent)) {
+        if(content.contains(oldValue)){
+            String updatedContent = content.replace(oldValue, newValue);
             Files.write(file.toPath(), updatedContent.getBytes(), StandardOpenOption.TRUNCATE_EXISTING);
-
-
+            response.setStatus(Result.Status.SUCCESSFUL);
+            response.setId(0);
+            response.setCodError(0);
+            response.setMessage("Value changed successfully.");
+            log.registerLog("0", className, nameofCurrMethod, response.getMessage());
+        }else{
+            response.setStatus(Result.Status.FAIL);
+            response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+            response.setId(99);
+            response.setCodError(99);
+            response.setMessage("Old value not found in file.");
+            log.registerErrorLog("99",className,nameofCurrMethod,response.getMessage());
         }
+        return response;
     }
 
     public List<File> searchFiles(String directoryPath,String nameFile) throws IOException {
