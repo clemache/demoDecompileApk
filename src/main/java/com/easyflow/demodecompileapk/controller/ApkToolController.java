@@ -1,11 +1,9 @@
 package com.easyflow.demodecompileapk.controller;
 
 import brut.androlib.exceptions.AndrolibException;
-import com.easyflow.demodecompileapk.configuration.mq.Publisher;
+import com.easyflow.demodecompileapk.configuration.Result;
 import com.easyflow.demodecompileapk.service.ApkService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.InputStreamResource;
-import org.springframework.core.io.Resource;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -13,95 +11,142 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.net.URI;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/apk")
 public class ApkToolController {
 
-    private final ApkService apkService;
+    private final ApkService _apkService;
    // @Autowired
    // private Publisher _notifications;
-
     public ApkToolController(ApkService apkService) {
-        this.apkService = apkService;
+        this._apkService = apkService;
     }
 
-    @PostMapping("/modify")
-    public ResponseEntity<Resource> modifyApk(@RequestParam("file") MultipartFile apkFile) {
-
-        //En postamn recibe la opcion de "ENVIAR Y DESCARGAR"
-        //String PATH_DECOMPILATION = Paths.get("results").toString();
-        String pathDecompile;
-        String pathRecompile;
-        String pathZipalign;
-        File signedApkFile;
+    @GetMapping("/modifyapk")
+    public ResponseEntity<?> modifyValueApk(@RequestParam("apk") MultipartFile apkFile,@RequestParam("nameFile") String nameFile,
+                                            @RequestParam("oldValue") String oldValue,@RequestParam("newValue") String newValue) {
         File tempDirectoryResults = null;
+        Result response = new Result();
+        URI v = null;
 
-        try {
+        if (apkFile == null || apkFile.isEmpty() ||
+                nameFile == null || nameFile.trim().isEmpty() ||
+                oldValue == null || oldValue.trim().isEmpty() ||
+                newValue == null || newValue.trim().isEmpty()) {
+            response.setStatus(Result.Status.FAIL);
+            response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+            response.setId(99);
+            response.setCodError(99);
+            response.setMessage("Todos los parámetros son obligatorios y no pueden estar vacíos.");
+            return ResponseEntity
+                    .created(null)
+                    .contentType(MediaType.APPLICATION_XML)
+                    .body(response);
+        }else {
 
-            tempDirectoryResults = new File(System.getProperty("user.dir"), "results");
-            if (!tempDirectoryResults.exists() && !tempDirectoryResults.mkdirs()) {
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
-            }
-
-            //guarda el apk en el directorio temporal
-            File tempFile = new File(tempDirectoryResults, apkFile.getOriginalFilename());
-            apkFile.transferTo(tempFile);
-
-            // DECOMPILA LA APK
-             pathDecompile = apkService.decompileApk(tempFile.getAbsolutePath());
-
-            // PRUEBA PARA MODIFICAR UN ARCHIVO ENVIANDO EL NOMBRE DEL ARCHIVO, EL VALOR A REMPLAZAR Y EL NUEVO VALOR
             try {
-                String fileName = "Parametros.smali";
-                String oldValue = "192.168.1.1";
-                String newValue = "192.168.1.3";
-                 String result = apkService.modifyOnFileValue(pathDecompile,fileName,oldValue,newValue,"user001","device");
+                tempDirectoryResults = new File(System.getProperty("user.dir"), "results");
+                if (!tempDirectoryResults.exists() && !tempDirectoryResults.mkdirs()) {
+                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+                }
+                //save apk at temp directory
+                File apkOnDirectory = new File(tempDirectoryResults, Objects.requireNonNull(apkFile.getOriginalFilename()));
+                apkFile.transferTo(apkOnDirectory);
+                //DECOMPILE APK
+                response = _apkService.decompileApk(apkOnDirectory.getAbsolutePath());
+                if(response.getCodError()==0){
+                    //Test to modify a file
+                    String pathDecompileApk=(String)response.getObject();
+                    response = _apkService.modifyValueFile(pathDecompileApk,nameFile,oldValue,newValue,"user001","device");
+                    if(response.getCodError()==0){
+                        //compilar de nuevo
+                        response = _apkService.compileApk(pathDecompileApk);
+                        if (response.getCodError()==0) {
+                            //comílado correcto
+                            //Align apk
+                            response = _apkService.zipalignApk((String) response.getObject());
+                            if(response.getCodError()==0){
+                                //Sign apk
+                                response = _apkService.signApk((String)response.getObject());
+                                if(response.getCodError()==0){
+                                    // ENVIO DE APK FILE DESCARGABLE
+                                    File signedApkFile = (File)response.getObject();
+                                    InputStreamResource resource = new InputStreamResource(new FileInputStream(signedApkFile));
+                                    HttpHeaders headers = new HttpHeaders();
+                                    headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+                                    headers.setContentDisposition(ContentDisposition.builder("attachment")
+                                            .filename(signedApkFile.getName())
+                                            .build());
+                                    headers.setContentLength(signedApkFile.length());
+                                    return new ResponseEntity<>(resource, headers, HttpStatus.OK);
 
-            } catch (IOException e) {
-                e.printStackTrace();
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
-            }
-
-            //COMPILA LA APK DE NUEVO CON LOS CAMBIOS
-            pathRecompile = apkService.compileApk(pathDecompile);
-            //_notifications.sendProcessInfo("Decompilando apk - "+tempFile.getName() ,"user001");
-
-            //ZIPALIGN optimiza archivos APK para mejorar el rendimiento
-            pathZipalign = apkService.zipalignApk(pathRecompile);
-
-            //APKSIGNER | FIRMA LA APK
-            signedApkFile = apkService.signApk(pathZipalign);
-
-            // Preparar el archivo para ser descargado
-            InputStreamResource resource = new InputStreamResource(new FileInputStream(signedApkFile));
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
-            headers.setContentDisposition(ContentDisposition.builder("attachment")
-                    .filename(signedApkFile.getName())
-                    .build());
-            headers.setContentLength(signedApkFile.length());
-
-           // _notifications.sendProcessInfo("APK generado de "+ tempFile.getName(),"user001");
-
-            // Retornar el archivo firmado como respuesta
-            return new ResponseEntity<>(resource, headers, HttpStatus.OK);
-
-
-        } catch (IOException | AndrolibException | InterruptedException e) {
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
-        } finally {
-            if(tempDirectoryResults != null) {
-                apkService.deleteDirectory(tempDirectoryResults);
+                                    //Envio respuesta de la ruta donde esta la apk final
+                                    /*
+                                    return ResponseEntity
+                                            .created(v)
+                                            .contentType(MediaType.APPLICATION_XML)
+                                            .body(response);
+                                    */
+                                }else{
+                                    // error al firmar la apk
+                                    return ResponseEntity
+                                            .created(v)
+                                            .contentType(MediaType.APPLICATION_XML)
+                                            .body(response);
+                                }
+                            }else{
+                                // error al alinear el apk
+                                return ResponseEntity
+                                        .created(v)
+                                        .contentType(MediaType.APPLICATION_XML)
+                                        .body(response);
+                            }
+                        }else {
+                            //error al compilar
+                            return ResponseEntity
+                                    .created(v)
+                                    .contentType(MediaType.APPLICATION_XML)
+                                    .body(response);
+                        }
+                    }else{
+                        // error al modificar
+                        return ResponseEntity
+                                .created(v)
+                                .contentType(MediaType.APPLICATION_XML)
+                                .body(response);
+                    }
+                }else{
+                    // error al decompilar la apk
+                    return ResponseEntity
+                            .created(v)
+                            .contentType(MediaType.APPLICATION_XML)
+                            .body(response);
+                }
+            } catch (IOException | AndrolibException | InterruptedException e) {
+                // error during process
+                response.setStatus(Result.Status.FAIL);
+                response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+                response.setId(99);
+                response.setCodError(99);
+                response.setMessage(e.getMessage());
+                return ResponseEntity
+                        .created(v)
+                        .contentType(MediaType.APPLICATION_XML)
+                        .body(response);
+            }finally {
+                if(tempDirectoryResults != null) {
+                    _apkService.deleteDirectory(tempDirectoryResults);
+                }
             }
         }
     }
 
+
     @PostMapping("/searchFile")
     public ResponseEntity<String> searchApk(@RequestParam("file") String test) {
-
         return ResponseEntity.ok("Test"+ test);
     }
 }
