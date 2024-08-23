@@ -2,7 +2,9 @@ package com.easyflow.demodecompileapk.controller;
 
 import brut.androlib.exceptions.AndrolibException;
 import com.easyflow.demodecompileapk.configuration.Result;
+import com.easyflow.demodecompileapk.configuration.mq.Publisher;
 import com.easyflow.demodecompileapk.service.ApkService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
@@ -19,8 +21,8 @@ import java.util.Objects;
 public class ApkToolController {
 
     private final ApkService _apkService;
-   // @Autowired
-   // private Publisher _notifications;
+    @Autowired
+    private Publisher _notifications;
     public ApkToolController(ApkService apkService) {
         this._apkService = apkService;
     }
@@ -30,7 +32,6 @@ public class ApkToolController {
                                             @RequestParam("oldValue") String oldValue,@RequestParam("newValue") String newValue) {
         File tempDirectoryResults = null;
         Result response = new Result();
-        URI v = null;
 
         if (apkFile == null || apkFile.isEmpty() ||
                 nameFile == null || nameFile.trim().isEmpty() ||
@@ -93,35 +94,35 @@ public class ApkToolController {
                                 }else{
                                     // error al firmar la apk
                                     return ResponseEntity
-                                            .created(v)
+                                            .created(null)
                                             .contentType(MediaType.APPLICATION_XML)
                                             .body(response);
                                 }
                             }else{
                                 // error al alinear el apk
                                 return ResponseEntity
-                                        .created(v)
+                                        .created(null)
                                         .contentType(MediaType.APPLICATION_XML)
                                         .body(response);
                             }
                         }else {
                             //error al compilar
                             return ResponseEntity
-                                    .created(v)
+                                    .created(null)
                                     .contentType(MediaType.APPLICATION_XML)
                                     .body(response);
                         }
                     }else{
                         // error al modificar
                         return ResponseEntity
-                                .created(v)
+                                .created(null)
                                 .contentType(MediaType.APPLICATION_XML)
                                 .body(response);
                     }
                 }else{
                     // error al decompilar la apk
                     return ResponseEntity
-                            .created(v)
+                            .created(null)
                             .contentType(MediaType.APPLICATION_XML)
                             .body(response);
                 }
@@ -133,7 +134,7 @@ public class ApkToolController {
                 response.setCodError(99);
                 response.setMessage(e.getMessage());
                 return ResponseEntity
-                        .created(v)
+                        .created(null)
                         .contentType(MediaType.APPLICATION_XML)
                         .body(response);
             }finally {
@@ -147,6 +148,7 @@ public class ApkToolController {
 
     @PostMapping("/searchFile")
     public ResponseEntity<String> searchApk(@RequestParam("file") String test) {
+        _notifications.sendProcessInfo("test message for decompile apk","user001");
         return ResponseEntity.ok("Test"+ test);
     }
 }
