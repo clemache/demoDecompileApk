@@ -1,4 +1,9 @@
 HELP.md
+target/*
+# Exceptuar archivos .jar y .jar.original en target/
+!target/*.jar
+!target/*.jar.original
+
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
