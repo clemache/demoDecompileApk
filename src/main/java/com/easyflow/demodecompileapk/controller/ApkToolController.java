@@ -2,18 +2,13 @@ package com.easyflow.demodecompileapk.controller;
 
 import brut.androlib.exceptions.AndrolibException;
 import com.easyflow.demodecompileapk.configuration.Result;
-import com.easyflow.demodecompileapk.configuration.mq.Publisher;
 import com.easyflow.demodecompileapk.service.ApkService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.net.URI;
 import java.util.Objects;
 
 @RestController
@@ -21,15 +16,15 @@ import java.util.Objects;
 public class ApkToolController {
 
     private final ApkService _apkService;
-    @Autowired
-    private Publisher _notifications;
+
     public ApkToolController(ApkService apkService) {
         this._apkService = apkService;
     }
 
     @GetMapping("/modifyapk")
     public ResponseEntity<?> modifyValueApk(@RequestParam("apk") MultipartFile apkFile,@RequestParam("nameFile") String nameFile,
-                                            @RequestParam("oldValue") String oldValue,@RequestParam("newValue") String newValue) {
+                                            @RequestParam("oldValue") String oldValue,@RequestParam("newValue") String newValue,
+                                            @RequestParam("username") String username,@RequestParam("device") String device,@RequestParam("program") String program) {
         File tempDirectoryResults = null;
         Result response = new Result();
 
@@ -57,22 +52,23 @@ public class ApkToolController {
                 File apkOnDirectory = new File(tempDirectoryResults, Objects.requireNonNull(apkFile.getOriginalFilename()));
                 apkFile.transferTo(apkOnDirectory);
                 //DECOMPILE APK
-                response = _apkService.decompileApk(apkOnDirectory.getAbsolutePath());
+                response = _apkService.decompileApk(apkOnDirectory.getAbsolutePath(),username,device,program);
                 if(response.getCodError()==0){
                     //Test to modify a file
                     String pathDecompileApk=(String)response.getObject();
-                    response = _apkService.modifyValueFile(pathDecompileApk,nameFile,oldValue,newValue,"user001","device");
+                    response = _apkService.modifyValueFile(pathDecompileApk,nameFile,oldValue,newValue,username,device,program);
                     if(response.getCodError()==0){
                         //compilar de nuevo
-                        response = _apkService.compileApk(pathDecompileApk);
+                        response = _apkService.compileApk(pathDecompileApk,username,device,program);
                         if (response.getCodError()==0) {
                             //comílado correcto
                             //Align apk
-                            response = _apkService.zipalignApk((String) response.getObject());
+                            response = _apkService.zipalignApk((String) response.getObject(),username,device,program);
                             if(response.getCodError()==0){
                                 //Sign apk
-                                response = _apkService.signApk((String)response.getObject());
+                                response = _apkService.signApk((String)response.getObject(),username,device,program);
                                 if(response.getCodError()==0){
+                                    /*
                                     // ENVIO DE APK FILE DESCARGABLE
                                     File signedApkFile = (File)response.getObject();
                                     InputStreamResource resource = new InputStreamResource(new FileInputStream(signedApkFile));
@@ -83,14 +79,14 @@ public class ApkToolController {
                                             .build());
                                     headers.setContentLength(signedApkFile.length());
                                     return new ResponseEntity<>(resource, headers, HttpStatus.OK);
-
+                                    */
                                     //Envio respuesta de la ruta donde esta la apk final
-                                    /*
+
                                     return ResponseEntity
-                                            .created(v)
+                                            .created(null)
                                             .contentType(MediaType.APPLICATION_XML)
                                             .body(response);
-                                    */
+
                                 }else{
                                     // error al firmar la apk
                                     return ResponseEntity
@@ -148,7 +144,7 @@ public class ApkToolController {
 
     @PostMapping("/searchFile")
     public ResponseEntity<String> searchApk(@RequestParam("file") String test) {
-        _notifications.sendProcessInfo("test message for decompile apk","user001");
         return ResponseEntity.ok("Test"+ test);
     }
+
 }
