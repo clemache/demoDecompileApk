@@ -9,6 +9,7 @@ import brut.directory.ExtFile;
 
 import com.easyflow.demodecompileapk.configuration.Log;
 import com.easyflow.demodecompileapk.configuration.Result;
+import com.easyflow.demodecompileapk.configuration.mq.Publisher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -25,8 +26,8 @@ import java.util.stream.Stream;
 @Service
 public class ApkService {
 
-   // @Autowired
-   // private Publisher _notifications;
+    @Autowired
+    private Publisher _notifications;
     @Autowired
     private Log log;
 
@@ -49,9 +50,9 @@ public class ApkService {
     private static final String KEY_STORE_FILE_PATH_LNX = Paths.get(TOOLS_DIR_LNX, "keyStore","AsistecomApp.jks").toString();
 
 
-    public Result decompileApk(String apkPath) throws AndrolibException{
+    public Result decompileApk(String apkPath, String userName,String device,String program) throws AndrolibException{
 
-        String className = this.getClass().getName();
+        String className = this.getClass().getSimpleName();
         String nameofCurrMethod = new Throwable() .getStackTrace()[0].getMethodName();
         Result response = new Result();
 
@@ -63,7 +64,7 @@ public class ApkService {
         if (outPutPath.exists()) {
             deleteDirectory(outPutPath);
         }
-
+        _notifications.sendProcessInfo("Starting APK decompilation for file: "+apkFile.getName(),"system");
         try {
             apkDecoder.decode(outPutPath);
             response.setStatus(Result.Status.SUCCESSFUL);
@@ -73,17 +74,19 @@ public class ApkService {
             response.setMessage("Decompiled APK at: " + outPutPath.getAbsolutePath());
             response.setObject(outPutPath.getAbsolutePath());
             log.registerLog("0", className, nameofCurrMethod, response.getMessage());
+            _notifications.sendProcessInfo(log.toString(), userName);
         }catch (AndrolibException | IOException | DirectoryException  e) {
             response.setMessage("Error to decompile APK: "+e.getMessage());
             log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+            _notifications.sendProcessError(log.toString(), userName);
         }
         return response;
     }
 
     //Main Method Moodify
-    public Result modifyValueFile(String directoryPathDecompilation, String nameFile, String oldValue, String newValue, String username, String device) throws IOException {
+    public Result modifyValueFile(String directoryPathDecompilation, String nameFile, String oldValue, String newValue, String username, String device,String program) throws IOException {
 
-        String className = this.getClass().getName();
+        String className = this.getClass().getSimpleName();
         String nameofCurrMethod = new Throwable() .getStackTrace()[0].getMethodName();
         Result response = new Result();
 
@@ -92,7 +95,8 @@ public class ApkService {
         if(!files.isEmpty()) {
             for (File file : files) {
                 if(isFileReadable(file)){
-                response = updateValue(file,oldValue,newValue,username,device);
+               // response = updateValue(file,oldValue,newValue,username,device);
+                    response = updateValueWhitoutOldValue(file,newValue,username,device);
                 }else {
                     response.setStatus(Result.Status.FAIL);
                     response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
@@ -100,6 +104,7 @@ public class ApkService {
                     response.setCodError(99);
                     response.setMessage("The file cannot be edited, it does not contain valid characters.");
                     log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+                    _notifications.sendProcessInfo(log.toString(), username);
                 }
             }
         }else{
@@ -109,13 +114,14 @@ public class ApkService {
             response.setCodError(99);
             response.setMessage("No files found with the name "+nameFile);
             log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+            _notifications.sendProcessInfo(log.toString(), username);
         }
         return response;
     }
 
-    public Result compileApk(String pathDecompilation) throws AndrolibException {
+    public Result compileApk(String pathDecompilation, String username,String device,String program) throws AndrolibException {
 
-        String className = this.getClass().getName();
+        String className = this.getClass().getSimpleName();
         String nameofCurrMethod = new Throwable() .getStackTrace()[0].getMethodName();
         Result response = new Result();
 
@@ -142,6 +148,8 @@ public class ApkService {
             response.setMessage("Compiled APK at: " + outPutPathNewApk.getAbsolutePath());
             response.setObject(outPutPathNewApk.getAbsolutePath());
             log.registerLog("0", className, nameofCurrMethod, response.getMessage());
+            _notifications.sendProcessInfo(log.toString(), username);
+
         } catch (Exception e) {
             response.setStatus(Result.Status.FAIL);
             response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
@@ -153,9 +161,9 @@ public class ApkService {
         return response;
     }
 
-    public Result zipalignApk(String apkPathZipalign) throws InterruptedException, IOException {
+    public Result zipalignApk(String apkPathZipalign, String username, String device, String program) throws InterruptedException, IOException {
 
-        String className = this.getClass().getName();
+        String className = this.getClass().getSimpleName();
         String nameofCurrMethod = new Throwable() .getStackTrace()[0].getMethodName();
         Result response = new Result();
 
@@ -196,6 +204,7 @@ public class ApkService {
                 response.setMessage("Apk aligned at: " + outPutPathApkZipalign.getAbsolutePath());
                 response.setObject(outPutPathApkZipalign.getAbsolutePath());
                 log.registerLog("0", className, nameofCurrMethod,response.getMessage());
+                _notifications.sendProcessInfo(log.toString(),username);
             } else {
                 response.setStatus(Result.Status.FAIL);
                 response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
@@ -203,6 +212,7 @@ public class ApkService {
                 response.setCodError(99);
                 response.setMessage("Failed to zip-align the APK. Exit code: " + zipalignExitCode + "\n" + errorOutput);
                 log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+                _notifications.sendProcessInfo(log.toString(),username);
             }
         } catch (IOException | InterruptedException e) {
             response.setStatus(Result.Status.FAIL);
@@ -211,13 +221,14 @@ public class ApkService {
             response.setCodError(99);
             response.setMessage("Failed to zip-align the APK: " + e.getMessage());
             log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+            _notifications.sendProcessInfo(log.toString(),username);
         }
         return response;
     }
 
-    public Result signApk(String zipalignedApkPath) throws IOException, InterruptedException {
+    public Result signApk(String zipalignedApkPath, String username, String device, String program) throws IOException, InterruptedException {
 
-        String className = this.getClass().getName();
+        String className = this.getClass().getSimpleName();
         String nameofCurrMethod = new Throwable() .getStackTrace()[0].getMethodName();
         Result response = new Result();
 
@@ -261,6 +272,7 @@ public class ApkService {
                 response.setMessage("Apk signed successfully, at : "+ outFileApkSigned.getAbsolutePath());
                 response.setObject(outFileApkSigned);
                 log.registerLog("0", className, nameofCurrMethod, response.getMessage());
+                _notifications.sendProcessInfo(log.toString(),username);
             }else {
                 response.setStatus(Result.Status.FAIL);
                 response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
@@ -268,6 +280,7 @@ public class ApkService {
                 response.setCodError(99);
                 response.setMessage("Failed to sign the APK. Exit code: " + signExitCode + "\n" + errorOutput);
                 log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+                _notifications.sendProcessInfo(log.toString(),username);
             }
         }catch (IOException | InterruptedException e) {
             response.setStatus(Result.Status.FAIL);
@@ -276,6 +289,7 @@ public class ApkService {
             response.setCodError(99);
             response.setMessage("Failed to sign the APK: " + e.getMessage());
             log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+            _notifications.sendProcessInfo(log.toString(),username);
         }
         return response;
     }
@@ -294,7 +308,7 @@ public class ApkService {
     }
 
     public Result updateValue(File file, String oldValue, String newValue, String username, String device) throws IOException {
-        String className = this.getClass().getName();
+        String className = this.getClass().getSimpleName();
         String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
         Result response = new Result();
 
@@ -319,6 +333,7 @@ public class ApkService {
             response.setCodError(0);
             response.setMessage("Value changed successfully.");
             log.registerLog("0", className, nameofCurrMethod, response.getMessage());
+            _notifications.sendProcessInfo(log.toString(),username);
         }else{
             response.setStatus(Result.Status.FAIL);
             response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
@@ -326,6 +341,56 @@ public class ApkService {
             response.setCodError(99);
             response.setMessage("Old value not found in file.");
             log.registerErrorLog("99",className,nameofCurrMethod,response.getMessage());
+            _notifications.sendProcessInfo(log.toString(),username);
+        }
+        return response;
+    }
+
+    //Modify without oldValue
+    public Result updateValueWhitoutOldValue(File file, String newValue, String username, String device) throws IOException {
+        String className = this.getClass().getSimpleName();
+        String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
+        Result response = new Result();
+        if (!file.exists() || !file.isFile()) {
+            throw new IllegalArgumentException("Invalid file.");
+        }
+        List<String> allowedExtensions = Arrays.asList(".smali", ".xml");
+        boolean isValidExtension = allowedExtensions.stream()
+                .anyMatch(extension -> file.getName().endsWith(extension));
+
+        if (!isValidExtension) {
+            throw new IllegalArgumentException("The file is not a .smali or .xml file.");
+        }
+        String content = new String(Files.readAllBytes(file.toPath()));
+        String keyword = "sput-object v0, Lcom/example/asisteapp/Parametros;->dirServer:Ljava/lang/String;";
+        String updateContent = content;
+        String[] lines = null;
+        if (content.contains(keyword)) {
+            lines = content.split("\\r?\\n");
+            for (int i = 0; i < lines.length; i++) {
+                if (lines[i].contains(keyword)) {
+                    String prefix = "const-string v0,";
+                    String newLine = prefix + "\"" + newValue + "\"";
+                    lines[i - 1] = newLine;
+                    break;
+                }
+            }
+            updateContent = String.join(System.lineSeparator(), lines);
+            Files.write(file.toPath(), updateContent.getBytes(), StandardOpenOption.TRUNCATE_EXISTING);
+            response.setStatus(Result.Status.SUCCESSFUL);
+            response.setId(0);
+            response.setCodError(0);
+            response.setMessage("Value changed successfully. without old value");
+            log.registerLog("0", className, nameofCurrMethod, response.getMessage());
+            _notifications.sendProcessInfo(log.toString(), username);
+        }else{
+            response.setStatus(Result.Status.FAIL);
+            response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+            response.setId(99);
+            response.setCodError(99);
+            response.setMessage("Target field not found in file without old value.");
+            log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+            _notifications.sendProcessInfo(log.toString(), username);
         }
         return response;
     }
