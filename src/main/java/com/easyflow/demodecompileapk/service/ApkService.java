@@ -12,7 +12,10 @@ import com.easyflow.demodecompileapk.configuration.Result;
 import com.easyflow.demodecompileapk.configuration.mq.Publisher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.w3c.dom.Document;
 
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -95,14 +98,18 @@ public class ApkService {
         if(!files.isEmpty()) {
             for (File file : files) {
                 if(isFileReadable(file)){
-               // response = updateValue(file,oldValue,newValue,username,device);
-                    response = updateValueWhitoutOldValue(file,newValue,username,device);
+                    // response = updateValue(file,oldValue,newValue,username,device);
+                    // response = updateValueSmali(file,newValue,username,device);
+                    // response = addNewPermissionOnManifest(file,newValue,username,device);
+                    String permission = "<uses-permission android:name=\"android.permission.BLUETOOTH\"/>";
+                    response = removePermissionOnManifest(file,permission,username,device);
+                    return response;
                 }else {
                     response.setStatus(Result.Status.FAIL);
                     response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
                     response.setId(99);
                     response.setCodError(99);
-                    response.setMessage("The file cannot be edited, it does not contain valid characters.");
+                    response.setMessage("The file cannot be edited, it does not contain valid characters. path: "+ file.getAbsolutePath() +" - name: "+file.getName());
                     log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
                     _notifications.sendProcessInfo(log.toString(), username);
                 }
@@ -347,7 +354,7 @@ public class ApkService {
     }
 
     //Modify without oldValue
-    public Result updateValueWhitoutOldValue(File file, String newValue, String username, String device) throws IOException {
+    public Result updateValueSmali(File file, String newValue, String username, String device) throws IOException {
         String className = this.getClass().getSimpleName();
         String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
         Result response = new Result();
@@ -359,28 +366,99 @@ public class ApkService {
                 .anyMatch(extension -> file.getName().endsWith(extension));
 
         if (!isValidExtension) {
-            throw new IllegalArgumentException("The file is not a .smali or .xml file.");
+            throw new IllegalArgumentException("The file is not a .smali");
         }
-        String content = new String(Files.readAllBytes(file.toPath()));
+
+        List<String> lines = Files.readAllLines(file.toPath());
         String keyword = "sput-object v0, Lcom/example/asisteapp/Parametros;->dirServer:Ljava/lang/String;";
-        String updateContent = content;
-        String[] lines = null;
-        if (content.contains(keyword)) {
-            lines = content.split("\\r?\\n");
-            for (int i = 0; i < lines.length; i++) {
-                if (lines[i].contains(keyword)) {
-                    String prefix = "const-string v0,";
-                    String newLine = prefix + "\"" + newValue + "\"";
-                    lines[i - 1] = newLine;
-                    break;
+
+        boolean found = false;
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).contains(keyword)) {
+                lines.remove(i-2);
+                if (i > 0) {
+                    String prefix = "    const-string v0,";
+                    String newLine = prefix + " \"" + newValue + "\"";
+                    lines.set(i - 2, newLine);
+                    lines.add(i - 1, "");
                 }
+                found = true;
+                break;
             }
-            updateContent = String.join(System.lineSeparator(), lines);
-            Files.write(file.toPath(), updateContent.getBytes(), StandardOpenOption.TRUNCATE_EXISTING);
+        }
+
+        if (found) {
+            Files.write(file.toPath(), lines, StandardOpenOption.TRUNCATE_EXISTING);
             response.setStatus(Result.Status.SUCCESSFUL);
             response.setId(0);
             response.setCodError(0);
-            response.setMessage("Value changed successfully. without old value");
+            response.setMessage("Value changed successfully.");
+            log.registerLog("0", className, nameofCurrMethod, response.getMessage());
+            _notifications.sendProcessInfo(log.toString(), username);
+        } else {
+            response.setStatus(Result.Status.FAIL);
+            response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+            response.setId(99);
+            response.setCodError(99);
+            response.setMessage("Target field not found in file.");
+            log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+            _notifications.sendProcessInfo(log.toString(), username);
+        }
+
+        return response;
+    }
+
+    public Result addNewPermissionOnManifest(File file, String newLine, String username, String device) throws IOException {
+        String className = this.getClass().getSimpleName();
+        String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
+        Result response = new Result();
+
+        if (!file.exists() || !file.isFile()) {
+            throw new IllegalArgumentException("Invalid file.");
+        }
+
+        List<String> lines = Files.readAllLines(file.toPath());
+        boolean replaced = false;
+        int inserIndex = -1;
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).trim().equals("</manifest>")) {
+                inserIndex=i;
+                break;
+            }
+        }
+        lines.add(inserIndex, " <uses-permission android:name=\""+newLine+"\"/>");
+        Files.write(file.toPath(), lines, StandardOpenOption.TRUNCATE_EXISTING);
+        response.setStatus(Result.Status.SUCCESSFUL);
+        response.setId(0);
+        response.setCodError(0);
+        response.setMessage("Permission added successfully.");
+        log.registerLog("0", className, nameofCurrMethod, response.getMessage());
+        _notifications.sendProcessInfo(log.toString(), "yourUsername");
+        return response;
+    }
+
+    public Result removePermissionOnManifest(File file , String permission, String username, String device) throws IOException {
+        String className = this.getClass().getSimpleName();
+        String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
+        Result response = new Result();
+        if (!file.exists() || !file.isFile()) {
+            throw new IllegalArgumentException("Invalid file.");
+        }
+        List<String> lines = Files.readAllLines(file.toPath());
+        boolean delete = false;
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).trim().equals(permission)) {
+                lines.remove(i);
+                delete = true;
+                break;
+            }
+        }
+        if (delete) {
+            Files.write(file.toPath(), lines, StandardOpenOption.TRUNCATE_EXISTING);
+            response.setStatus(Result.Status.SUCCESSFUL);
+            response.setId(0);
+            response.setCodError(0);
+            response.setMessage("Value deleted successfully.");
             log.registerLog("0", className, nameofCurrMethod, response.getMessage());
             _notifications.sendProcessInfo(log.toString(), username);
         }else{
@@ -388,13 +466,12 @@ public class ApkService {
             response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
             response.setId(99);
             response.setCodError(99);
-            response.setMessage("Target field not found in file without old value.");
+            response.setMessage("Target field not found in file.");
             log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
             _notifications.sendProcessInfo(log.toString(), username);
         }
         return response;
     }
-
     public List<File> searchFiles(String directoryPath,String nameFile) throws IOException {
         List<File> files = new ArrayList<>();
         Path dirPath = Paths.get(directoryPath);
@@ -425,5 +502,4 @@ public class ApkService {
         }
         return false;
     }
-
 }
