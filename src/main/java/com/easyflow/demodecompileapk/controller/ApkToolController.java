@@ -3,12 +3,18 @@ package com.easyflow.demodecompileapk.controller;
 import brut.androlib.exceptions.AndrolibException;
 import com.easyflow.demodecompileapk.configuration.Result;
 import com.easyflow.demodecompileapk.service.ApkService;
+import com.easyflow.demodecompileapk.util.ModificationRequest;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.List;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import java.util.Objects;
 
 @RestController
@@ -17,9 +23,10 @@ public class ApkToolController {
 
     private final ApkService _apkService;
 
-    public ApkToolController(ApkService apkService) {
-        this._apkService = apkService;
+    public ApkToolController(ApkService _apkService) {
+        this._apkService = _apkService;
     }
+
 
     @GetMapping("/modifyapk")
     public ResponseEntity<?> modifyValueApk(@RequestParam("apk") MultipartFile apkFile,@RequestParam("nameFile") String nameFile,
@@ -135,16 +142,33 @@ public class ApkToolController {
                         .body(response);
             }finally {
                 if(tempDirectoryResults != null) {
-                    _apkService.deleteDirectory(tempDirectoryResults);
+                   // _apkService.deleteDirectory(tempDirectoryResults);
                 }
             }
         }
     }
 
 
-    @PostMapping("/searchFile")
-    public ResponseEntity<String> searchApk(@RequestParam("file") String test) {
-        return ResponseEntity.ok("Test"+ test);
+    @PostMapping("/test")
+    public ResponseEntity<String> searchApk(@RequestParam("modifications") String modificationsJS) {
+        File tempDirectoryResults = null;
+        Result response = new Result();
+
+        //Lista para modificaciones
+        List<ModificationRequest> modificationRequestList = parseModifications(modificationsJS);
+        ModificationRequest modificationRequest1 = modificationRequestList.get(0);
+
+        return ResponseEntity.ok("Test = "+ modificationRequest1.getTypeFile());
+    }
+
+    private List<ModificationRequest> parseModifications(String json) {
+        try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            return objectMapper.readValue(json, new TypeReference<List<ModificationRequest>>() {});
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException("Error al parsear el JSON de modificaciones", e);
+        }
     }
 
 }
