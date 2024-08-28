@@ -48,6 +48,17 @@ public class ModificationRequest {
         this.typeFile = typeFile;
     }
 
+    @Override
+    public String toString() {
+        return "ModificationRequest{" +
+                "nameFile='" + nameFile + '\'' +
+                ", type=" + type +
+                ", oldValueOrVariable='" + oldValueOrVariable + '\'' +
+                ", newValue='" + newValue + '\'' +
+                ", typeFile=" + typeFile +
+                '}';
+    }
+
     private enum modificationType {
         REPLACEVALUE,
         ADDLINE,
