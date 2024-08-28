@@ -31,7 +31,7 @@ public class ApkToolController {
     @GetMapping("/modifyapk")
     public ResponseEntity<?> modifyValueApk(@RequestParam("apk") MultipartFile apkFile,@RequestParam("nameFile") String nameFile,
                                             @RequestParam("oldValue") String oldValue,@RequestParam("newValue") String newValue,
-                                            @RequestParam("username") String username,@RequestParam("device") String device,@RequestParam("program") String program) {
+                                            @RequestParam("username") String username,@RequestParam("device") String device) {
         File tempDirectoryResults = null;
         Result response = new Result();
 
@@ -59,21 +59,21 @@ public class ApkToolController {
                 File apkOnDirectory = new File(tempDirectoryResults, Objects.requireNonNull(apkFile.getOriginalFilename()));
                 apkFile.transferTo(apkOnDirectory);
                 //DECOMPILE APK
-                response = _apkService.decompileApk(apkOnDirectory.getAbsolutePath(),username,device,program);
+                response = _apkService.decompileApk(apkOnDirectory.getAbsolutePath(),username,device);
                 if(response.getCodError()==0){
                     //Test to modify a file
                     String pathDecompileApk=(String)response.getObject();
-                    response = _apkService.modifyValueFile(pathDecompileApk,nameFile,oldValue,newValue,username,device,program);
+                    response = _apkService.modifyValueFile(pathDecompileApk,nameFile,oldValue,newValue,username,device);
                     if(response.getCodError()==0){
                         //compilar de nuevo
-                        response = _apkService.compileApk(pathDecompileApk,username,device,program);
+                        response = _apkService.compileApk(pathDecompileApk,username,device);
                         if (response.getCodError()==0) {
                             //comílado correcto
                             //Align apk
-                            response = _apkService.zipalignApk((String) response.getObject(),username,device,program);
+                            response = _apkService.zipalignApk((String) response.getObject(),username,device);
                             if(response.getCodError()==0){
                                 //Sign apk
-                                response = _apkService.signApk((String)response.getObject(),username,device,program);
+                                response = _apkService.signApk((String)response.getObject(),username,device);
                                 if(response.getCodError()==0){
                                     /*
                                     // ENVIO DE APK FILE DESCARGABLE
@@ -158,7 +158,7 @@ public class ApkToolController {
         List<ModificationRequest> modificationRequestList = parseModifications(modificationsJS);
         ModificationRequest modificationRequest1 = modificationRequestList.get(0);
 
-        return ResponseEntity.ok("Test = "+ modificationRequest1.getTypeFile());
+        return ResponseEntity.ok("Test = "+ modificationRequest1.toString());
     }
 
     private List<ModificationRequest> parseModifications(String json) {
