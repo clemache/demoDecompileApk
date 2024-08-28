@@ -17,10 +17,7 @@ import org.w3c.dom.Document;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
+import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -53,7 +50,7 @@ public class ApkService {
     private static final String KEY_STORE_FILE_PATH_LNX = Paths.get(TOOLS_DIR_LNX, "keyStore","AsistecomApp.jks").toString();
 
 
-    public Result decompileApk(String apkPath, String userName,String device,String program) throws AndrolibException{
+    public Result decompileApk(String apkPath, String userName,String device) throws AndrolibException{
 
         String className = this.getClass().getSimpleName();
         String nameofCurrMethod = new Throwable() .getStackTrace()[0].getMethodName();
@@ -87,7 +84,7 @@ public class ApkService {
     }
 
     //Main Method Moodify
-    public Result modifyValueFile(String directoryPathDecompilation, String nameFile, String oldValue, String newValue, String username, String device,String program) throws IOException {
+    public Result modifyValueFile(String directoryPathDecompilation, String nameFile, String oldValue, String newValue, String username, String device) throws IOException {
 
         String className = this.getClass().getSimpleName();
         String nameofCurrMethod = new Throwable() .getStackTrace()[0].getMethodName();
@@ -101,8 +98,12 @@ public class ApkService {
                     // response = updateValue(file,oldValue,newValue,username,device);
                     // response = updateValueSmali(file,newValue,username,device);
                     // response = addNewPermissionOnManifest(file,newValue,username,device);
-                    String permission = "<uses-permission android:name=\"android.permission.BLUETOOTH\"/>";
-                    response = removePermissionOnManifest(file,permission,username,device);
+                    //String permission = "<uses-permission android:name=\"android.permission.BLUETOOTH\"/>";
+                    //response = removePermissionOnManifest(file,permission,username,device);
+                    response = addNewProyectforCmbLoginActivity(file,newValue,username,device);
+                    //transformar el .java a smali
+
+                    //response = replaceFile(file,file, username, device);
                     return response;
                 }else {
                     response.setStatus(Result.Status.FAIL);
@@ -126,7 +127,7 @@ public class ApkService {
         return response;
     }
 
-    public Result compileApk(String pathDecompilation, String username,String device,String program) throws AndrolibException {
+    public Result compileApk(String pathDecompilation, String username,String device) throws AndrolibException {
 
         String className = this.getClass().getSimpleName();
         String nameofCurrMethod = new Throwable() .getStackTrace()[0].getMethodName();
@@ -168,7 +169,7 @@ public class ApkService {
         return response;
     }
 
-    public Result zipalignApk(String apkPathZipalign, String username, String device, String program) throws InterruptedException, IOException {
+    public Result zipalignApk(String apkPathZipalign, String username, String device) throws InterruptedException, IOException {
 
         String className = this.getClass().getSimpleName();
         String nameofCurrMethod = new Throwable() .getStackTrace()[0].getMethodName();
@@ -233,7 +234,7 @@ public class ApkService {
         return response;
     }
 
-    public Result signApk(String zipalignedApkPath, String username, String device, String program) throws IOException, InterruptedException {
+    public Result signApk(String zipalignedApkPath, String username, String device) throws IOException, InterruptedException {
 
         String className = this.getClass().getSimpleName();
         String nameofCurrMethod = new Throwable() .getStackTrace()[0].getMethodName();
@@ -437,6 +438,81 @@ public class ApkService {
         return response;
     }
 
+    public Result addNewProyectforCmbLoginActivity(File file, String newProyect, String username, String device) throws IOException {
+        String className = this.getClass().getSimpleName();
+        String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
+        Result response = new Result();
+        if (!file.exists() || !file.isFile()) {
+            throw new IllegalArgumentException("Invalid file.");
+        }
+        List<String> allowedExtension = Arrays.asList(".smali");
+        boolean isValidExtension = allowedExtension.stream()
+                .anyMatch(extension -> file.getName().endsWith(extension));
+        if (!isValidExtension) {
+            throw new IllegalArgumentException("The file is not a .smali");
+        }
+
+        List<String> lines = Files.readAllLines(file.toPath());
+        String keyline ="const-string v2, \"PORTOAGUAOT-62\"";
+        boolean found = false;
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).trim().equals(keyline)) {
+                if (i>0){
+                    String valueForCmb = "    const-string v2, \""+newProyect+"\"";
+                    String lineAsignedValueToCombo = "    invoke-interface {v0, v2}, Ljava/util/List;->add(Ljava/lang/Object;)Z";
+                    lines.add(i+4,valueForCmb);
+                    lines.add(i+5,"");
+                    lines.add(i+6,lineAsignedValueToCombo);
+                    lines.add(i+7,"");
+                }
+                found = true;
+                break;
+            }
+        }
+        if (found) {
+            Files.write(file.toPath(), lines, StandardOpenOption.TRUNCATE_EXISTING);
+            response.setStatus(Result.Status.SUCCESSFUL);
+            response.setId(0);
+            response.setCodError(0);
+            response.setMessage("New Proyect added successfully.");
+            log.registerLog("0", className, nameofCurrMethod, response.getMessage());
+            _notifications.sendProcessInfo(log.toString(), username);
+        }else{
+            response.setStatus(Result.Status.FAIL);
+            response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+            response.setId(99);
+            response.setCodError(99);
+            response.setMessage("Error to add new proyect.");
+            log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+            _notifications.sendProcessInfo(log.toString(), username);
+        }
+        return response;
+    }
+
+    public Result replaceFile(File currentFile, File newFile, String username, String device) throws IOException {
+        String className = this.getClass().getSimpleName();
+        String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
+        Result response = new Result();
+        // remplazar
+        if (currentFile.exists() && newFile.exists()) {
+            Files.copy(newFile.toPath(), currentFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            response.setStatus(Result.Status.SUCCESSFUL);
+            response.setId(0);
+            response.setCodError(0);
+            response.setMessage("file replaced successfully.");
+            log.registerLog("0", className, nameofCurrMethod, response.getMessage());
+            _notifications.sendProcessInfo(log.toString(), username);
+        } else {
+            response.setStatus(Result.Status.FAIL);
+            response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+            response.setId(99);
+            response.setCodError(99);
+            response.setMessage("error replacing file.");
+            log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+            _notifications.sendProcessInfo(log.toString(), username);
+        }
+        return response;
+    }
     public Result removePermissionOnManifest(File file , String permission, String username, String device) throws IOException {
         String className = this.getClass().getSimpleName();
         String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
