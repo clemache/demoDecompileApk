@@ -7,20 +7,26 @@ import brut.androlib.exceptions.AndrolibException;
 import brut.directory.DirectoryException;
 import brut.directory.ExtFile;
 
+import com.android.tools.smali.baksmali.Baksmali;
+import com.android.tools.smali.baksmali.BaksmaliOptions;
+import com.android.tools.smali.dexlib2.DexFileFactory;
+import com.android.tools.smali.dexlib2.Opcodes;
+import com.android.tools.smali.dexlib2.iface.DexFile;
 import com.easyflow.demodecompileapk.configuration.Log;
 import com.easyflow.demodecompileapk.configuration.Result;
 import com.easyflow.demodecompileapk.configuration.mq.Publisher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.w3c.dom.Document;
+import org.springframework.web.multipart.MultipartFile;
 
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
+import javax.tools.JavaCompiler;
+import javax.tools.ToolProvider;
 import java.io.*;
 import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Stream;
 
 @Service
@@ -38,6 +44,8 @@ public class ApkService {
     private static final String OUTPUT_PATCH_DECOMPILATION =  Paths.get(RESULTS_DIR,"decompilation").toString();
     private static final String OUTPUT_DIR_NEW_APK = Paths.get(RESULTS_DIR,"recompiledApk").toString();
     private static final String OUTPUT_DIR_ZIPALIGN = Paths.get(RESULTS_DIR,"zipalign").toString();
+    private static final String OUTPUT_DIR_JAVA_SMALI = Paths.get(RESULTS_DIR,"smali").toString();
+    private static final String OUTPUT_DIR_DEXFILE = Paths.get(RESULTS_DIR,"dex").toString();
     private static final File OUTPUT_DIR_SIGNED = new File(System.getProperty("user.dir"),"apkResult");
     private static final String KEY_STORE = "asistecom2024";
 
@@ -96,11 +104,11 @@ public class ApkService {
             for (File file : files) {
                 if(isFileReadable(file)){
                     // response = updateValue(file,oldValue,newValue,username,device);
-                    // response = updateValueSmali(file,newValue,username,device);
+                     response = updateValueSmali(file,newValue,username,device);
                     // response = addNewPermissionOnManifest(file,newValue,username,device);
                     //String permission = "<uses-permission android:name=\"android.permission.BLUETOOTH\"/>";
                     //response = removePermissionOnManifest(file,permission,username,device);
-                    response = addNewProyectforCmbLoginActivity(file,newValue,username,device);
+                   // response = addNewProyectforCmbLoginActivity(file,newValue,username,device);
                     //transformar el .java a smali
 
                     //response = replaceFile(file,file, username, device);
@@ -302,19 +310,6 @@ public class ApkService {
         return response;
     }
 
-    //Functiosn extras
-    public void deleteDirectory(File directory) {
-        if (directory.isDirectory()) {
-            File[] files = directory.listFiles();
-            if (files != null) {
-                for (File file : files) {
-                    deleteDirectory(file);
-                }
-            }
-        }
-        directory.delete();
-    }
-
     public Result updateValue(File file, String oldValue, String newValue, String username, String device) throws IOException {
         String className = this.getClass().getSimpleName();
         String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
@@ -489,30 +484,6 @@ public class ApkService {
         return response;
     }
 
-    public Result replaceFile(File currentFile, File newFile, String username, String device) throws IOException {
-        String className = this.getClass().getSimpleName();
-        String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
-        Result response = new Result();
-        // remplazar
-        if (currentFile.exists() && newFile.exists()) {
-            Files.copy(newFile.toPath(), currentFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            response.setStatus(Result.Status.SUCCESSFUL);
-            response.setId(0);
-            response.setCodError(0);
-            response.setMessage("file replaced successfully.");
-            log.registerLog("0", className, nameofCurrMethod, response.getMessage());
-            _notifications.sendProcessInfo(log.toString(), username);
-        } else {
-            response.setStatus(Result.Status.FAIL);
-            response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
-            response.setId(99);
-            response.setCodError(99);
-            response.setMessage("error replacing file.");
-            log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
-            _notifications.sendProcessInfo(log.toString(), username);
-        }
-        return response;
-    }
     public Result removePermissionOnManifest(File file , String permission, String username, String device) throws IOException {
         String className = this.getClass().getSimpleName();
         String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
@@ -548,6 +519,116 @@ public class ApkService {
         }
         return response;
     }
+
+    public Result replaceFile(String currentFile, MultipartFile newFile, String username, String device) throws IOException, AndrolibException, InterruptedException {
+        String className = this.getClass().getSimpleName();
+        String nameofCurrMethod = new Throwable().getStackTrace()[0].getMethodName();
+        Result response = new Result();
+
+        //add extension
+        currentFile=currentFile+".smali";
+        File outPutDirJavaSmali = new File(OUTPUT_DIR_JAVA_SMALI);
+        if (!outPutDirJavaSmali.mkdirs()) throw new IOException("Failed to create output directory.");
+        File fileJavaOnDirectory = new File(OUTPUT_DIR_JAVA_SMALI, Objects.requireNonNull(newFile.getOriginalFilename()));
+        newFile.transferTo(fileJavaOnDirectory);
+        // 1.- .JAVA TO .CLASS
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        if(compiler == null){
+            throw new AndrolibException("Java compiler not found. Make sure you are using a JDK and not a JRE.");
+        }
+        String[] options = {"-d", outPutDirJavaSmali.getAbsolutePath(), "-source", "8", "-target", "8" };
+
+        if(compiler.run(null,null,null,concatenate(options,fileJavaOnDirectory.getAbsolutePath()))==0){
+
+            //2.- .CLASS TO .DEX
+            //Search .class
+            File fileClass = searchFiles(OUTPUT_DIR_JAVA_SMALI,currentFile.replaceFirst("\\.[^.]+$", ".class")).get(0);
+            //File fileClass = filesClases.get(0);
+            String converteComand;
+            if (OS.contains("win")) {
+                converteComand = String.format("%s\\d8.bat --output \"%s\" \"%s\"", TOOLS_DIR,outPutDirJavaSmali.getAbsolutePath(), fileClass);
+            } else {
+                converteComand = String.format("%s/d8 --output %s %s", TOOLS_DIR_LNX, outPutDirJavaSmali.getAbsolutePath(), fileClass);
+            }
+            Process convertProcess = Runtime.getRuntime().exec(converteComand);
+            // Lee las salidas estándar y de error del proceso
+            BufferedReader stdInput = new BufferedReader(new InputStreamReader(convertProcess.getInputStream()));
+            BufferedReader stdError = new BufferedReader(new InputStreamReader(convertProcess.getErrorStream()));
+
+            String s;
+            StringBuilder output = new StringBuilder();
+            while ((s = stdInput.readLine()) != null) {
+                output.append(s).append("\n");
+            }
+
+            StringBuilder errorOutput = new StringBuilder();
+            while ((s = stdError.readLine()) != null) {
+                errorOutput.append(s).append("\n");
+            }
+
+            int ClassDexExitCode = convertProcess.waitFor();
+            if (ClassDexExitCode == 0) {
+                // 3.- .Dex to .smali
+                File dexFile = searchFiles(OUTPUT_DIR_JAVA_SMALI, "classes.dex").get(0);
+                BaksmaliOptions optionsBakSmali = new BaksmaliOptions();
+                DexFile dexFiles = DexFileFactory.loadDexFile(dexFile,Opcodes.forApi(19));
+
+                if(Baksmali.disassembleDexFile(dexFiles,outPutDirJavaSmali,Runtime.getRuntime().availableProcessors(), optionsBakSmali)){
+                    File currenteSmaliFile = searchFiles(OUTPUT_PATCH_DECOMPILATION,currentFile.replaceFirst("\\.[^.]+$", ".smali") ).get(0);
+                    File newSmaliFile = searchFiles(OUTPUT_DIR_JAVA_SMALI,currentFile.replaceFirst("\\.[^.]+$", ".smali") ).get(0);
+                    //Replace
+                    if (currenteSmaliFile.exists() && newSmaliFile.exists()) {
+                        Files.copy(newSmaliFile.toPath(), currenteSmaliFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                        response.setStatus(Result.Status.SUCCESSFUL);
+                        response.setHttp(Result.Http.OK);
+                        response.setId(0);
+                        response.setCodError(0);
+                        response.setMessage("File replaced from "+currenteSmaliFile.getAbsolutePath()+" to "+newSmaliFile.getAbsolutePath());
+                        log.registerLog("0", className, nameofCurrMethod, response.getMessage());
+                        //_notifications.sendProcessInfo(log.toString(), username);
+                    } else {
+                        response.setStatus(Result.Status.FAIL);
+                        response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+                        response.setId(99);
+                        response.setCodError(99);
+                        response.setMessage("Error replacing file");
+                        log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+                        //_notifications.sendProcessInfo(log.toString(), username);
+                    }
+                }else{
+                    response.setStatus(Result.Status.FAIL);
+                    response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+                    response.setId(99);
+                    response.setCodError(99);
+                    response.setMessage("Failed to convert the .dex  to .smali ");
+                    log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+                    //_notifications.sendProcessInfo(log.toString(), username);
+                }
+            } else {
+                response.setStatus(Result.Status.FAIL);
+                response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+                response.setId(99);
+                response.setCodError(99);
+                response.setMessage("Failed to convert the .class to .dex - Exit code: " + ClassDexExitCode + "\n" + errorOutput);
+                log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+                //_notifications.sendProcessInfo(log.toString(),username);
+            }
+
+        }else{
+            response.setStatus(Result.Status.FAIL);
+            response.setHttp(Result.Http.INTERNAL_SERVER_ERROR);
+            response.setId(99);
+            response.setCodError(99);
+            response.setMessage("Error to compile the file java.");
+            log.registerErrorLog("99", className, nameofCurrMethod, response.getMessage());
+            //_notifications.sendProcessInfo(log.toString(), username);
+        }
+
+        return response;
+    }
+
+
+    //Functiosn extras
     public List<File> searchFiles(String directoryPath,String nameFile) throws IOException {
         List<File> files = new ArrayList<>();
         Path dirPath = Paths.get(directoryPath);
@@ -577,5 +658,23 @@ public class ApkService {
             return false;
         }
         return false;
+    }
+
+    private static String[] concatenate(String[] options, String javaFilePath) {
+        String[] result = Arrays.copyOf(options, options.length + 1);
+        result[options.length] = javaFilePath;
+        return result;
+    }
+
+    public void deleteDirectory(File directory) {
+        if (directory.isDirectory()) {
+            File[] files = directory.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    deleteDirectory(file);
+                }
+            }
+        }
+        directory.delete();
     }
 }
