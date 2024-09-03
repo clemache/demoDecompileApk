@@ -9,12 +9,10 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.List;
 import java.util.Objects;
 
 @RestController
@@ -30,8 +28,9 @@ public class ApkToolController {
 
     @GetMapping("/modifyapk")
     public ResponseEntity<?> modifyValueApk(@RequestParam("apk") MultipartFile apkFile,@RequestParam("nameFile") String nameFile,
-                                            @RequestParam("oldValue") String oldValue,@RequestParam("newValue") String newValue,
-                                            @RequestParam("username") String username,@RequestParam("device") String device) {
+                                            @RequestParam("newFile") MultipartFile newFile, @RequestParam("oldValue") String oldValue,
+                                            @RequestParam("newValue") String newValue, @RequestParam("username") String username,
+                                            @RequestParam("device") String device) {
         File tempDirectoryResults = null;
         Result response = new Result();
 
@@ -63,7 +62,9 @@ public class ApkToolController {
                 if(response.getCodError()==0){
                     //Test to modify a file
                     String pathDecompileApk=(String)response.getObject();
-                    response = _apkService.modifyValueFile(pathDecompileApk,nameFile,oldValue,newValue,username,device);
+                    //response = _apkService.modifyValueFile(pathDecompileApk,nameFile,oldValue,newValue,username,device);
+                    //Remplazar la clase
+                    response = _apkService.replaceFile(nameFile,newFile,username,device);
                     if(response.getCodError()==0){
                         //compilar de nuevo
                         response = _apkService.compileApk(pathDecompileApk,username,device);
@@ -149,14 +150,14 @@ public class ApkToolController {
     }
 
 
-    @PostMapping("/test")
+    @GetMapping("/test")
     public ResponseEntity<String> searchApk(@RequestParam("modifications") String modificationsJS) {
         File tempDirectoryResults = null;
         Result response = new Result();
 
         //Lista para modificaciones
         List<ModificationRequest> modificationRequestList = parseModifications(modificationsJS);
-        ModificationRequest modificationRequest1 = modificationRequestList.get(0);
+        ModificationRequest modificationRequest1 = modificationRequestList.get(1);
 
         return ResponseEntity.ok("Test = "+ modificationRequest1.toString());
     }
@@ -170,5 +171,23 @@ public class ApkToolController {
             throw new RuntimeException("Error al parsear el JSON de modificaciones", e);
         }
     }
+
+    @GetMapping("/testCompile")
+    public ResponseEntity<String> searchApk(@RequestParam("classJava") MultipartFile classJava) {
+        File tempDirectoryResults = null;
+        Result response = new Result();
+
+        try {
+            _apkService.replaceFile("LoginActivity",classJava,"user001","android");
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        } catch (AndrolibException e) {
+            throw new RuntimeException(e);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        return ResponseEntity.ok("Test = ");
+    }
+
 
 }
